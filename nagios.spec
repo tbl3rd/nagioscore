@@ -3,7 +3,8 @@
 
 ### FIXME: TODO: Add sysv script based on template. (remove cmd-file on start-up)
 %define logmsg logger -t %{name}/rpm
-%define logdir %{_localstatedir}/log/nagios
+%define nagios4 /usr/local/nagios
+%define logdir %{nagios4}/var
 
 # Setup some debugging options in case we build with --with debug
 %if %{defined _with_debug}
@@ -73,27 +74,23 @@ This package contains all the files from the contrib directory
 
 %prep
 %setup
-
-# /usr/local/nagios is hardcoded in many places
-%{__perl} -pi.orig -e 's|/usr/local/nagios/var/rw|%{_localstatedir}/nagios/rw|g;' contrib/eventhandlers/submit_check_result
-
 %build
 
 CFLAGS="%{mycflags} %{myXcflags}" LDFLAGS="$CFLAGS" %configure \
+    --libdir=/lib \
     --datadir="%{_datadir}/nagios" \
-    --libexecdir="%{_libdir}/nagios/plugins" \
-    --localstatedir="%{_localstatedir}/nagios" \
-    --with-checkresult-dir="%{_localstatedir}/nagios/spool/checkresults" \
-    --sbindir="%{_libdir}/nagios/cgi" \
-    --sysconfdir="%{_sysconfdir}/nagios" \
+    --libexecdir="%{nagios4}/libexec" \
+    --localstatedir="%{nagios4}/var" \
+    --sbindir="%{nagios4}/sbin" \
+    --sysconfdir="%{nagios4}/etc" \
     --with-cgiurl="/nagios/cgi-bin" \
     --with-command-user="apache" \
     --with-command-group="apache" \
     --with-gd-lib="%{_libdir}" \
+    --with-gd-lib="/lib" \
     --with-gd-inc="%{_includedir}" \
     --with-htmurl="/nagios" \
     --with-init-dir="%{_initrddir}" \
-    --with-lockfile="%{_localstatedir}/nagios/nagios.pid" \
     --with-mail="/bin/mail" \
     --with-nagios-user="nagios" \
     --with-nagios-group="nagios" \
@@ -126,13 +123,6 @@ export PATH=%{_bindir}:/bin:\$PATH
 
 %{__install} -Dp -m 0644 sample-config/httpd.conf %{buildroot}%{_sysconfdir}/httpd/conf.d/nagios.conf
 
-### FIX log-paths
-%{__perl} -pi -e '
-        s|log_file.*|log_file=%{logdir}/nagios.log|;
-        s|log_archive_path=.*|log_archive_path=%{logdir}/archives|;
-        s|debug_file=.*|debug_file=%{logdir}/nagios.debug|;
-   ' %{buildroot}%{_sysconfdir}/nagios/nagios.cfg
-
 ### make logdirs
 %{__mkdir_p} %{buildroot}%{logdir}/
 %{__mkdir_p} %{buildroot}%{logdir}/archives/
@@ -154,17 +144,14 @@ export PATH=%{_bindir}:/bin:\$PATH
     DESTDIR="%{buildroot}" \
     INSTALL_OPTS=""
 
-### Install libnagios
-%{__install} -m 0644 lib/libnagios.a %{buildroot}%{_libdir}/libnagios.a
-
-%{__install} -d -m 0755 %{buildroot}%{_libdir}/nagios/plugins/eventhandlers/
-%{__cp} -afpv contrib/eventhandlers/* %{buildroot}%{_libdir}/nagios/plugins/eventhandlers/
+%{__install} -d -m 0755 %{buildroot}%{nagios4}/libexec/eventhandlers/
+%{__cp} -afpv contrib/eventhandlers/* %{buildroot}%{nagios4}/libexec/eventhandlers/
 %{__mv} contrib/README contrib/README.contrib
 
 CGI=`find contrib/ -name '*.cgi' -type f |sed s/'contrib\/'//g`
 CGI=`for i in $CGI; do echo -n "$i|"; done |sed s/\|$//`
-find %{buildroot}/%{_libdir}/nagios/cgi -type f -print | sed s!'%{buildroot}'!!g | egrep -ve "($CGI)" > cgi.files
-find %{buildroot}/%{_libdir}/nagios/cgi -type f -print | sed s!'%{buildroot}'!!g | egrep "($CGI)" > contrib.files
+find %{buildroot}%{nagios4}/sbin -type f -print | sed s!'%{buildroot}'!!g | egrep -ve "($CGI)" > cgi.files
+find %{buildroot}%{nagios4}/sbin -type f -print | sed s!'%{buildroot}'!!g | egrep "($CGI)" > contrib.files
 
 
 
@@ -196,11 +183,6 @@ if [ $1 -eq 0 ]; then
 fi
 
 %postun
-# This could be bad if files are left with this uid/gid and then get owned by a new user
-#if [ $1 -eq 0 ]; then
-#    /usr/sbin/userdel nagios || %logmsg "User \"nagios\" could not be deleted."
-#    /usr/sbin/groupdel nagios || %logmsg "Group \"nagios\" could not be deleted."
-#fi
 /sbin/service nagios condrestart &>/dev/null || :
 
 %clean
@@ -214,17 +196,12 @@ fi
 %attr(0755,root,root) %config %{_initrddir}/nagios
 %attr(0755,root,root) %{_bindir}/nagios
 %attr(0755,root,root) %{_bindir}/nagiostats
-%attr(0755,root,root) %{_libdir}/nagios/plugins/
+%attr(0755,root,root) %{nagios4}/libexec
 %attr(0755,root,root) %{_datadir}/nagios/
-%attr(0755,nagios,nagios) %dir %{_sysconfdir}/nagios/
-%attr(0644,nagios,nagios) %config(noreplace) %{_sysconfdir}/nagios/*.cfg
-%attr(0755,nagios,nagios) %{_sysconfdir}/nagios/objects/
-%attr(0644,nagios,nagios) %config(noreplace) %{_sysconfdir}/nagios/objects/*.cfg
-%attr(0755,nagios,nagios) %dir %{_localstatedir}/nagios/
-%attr(0755,nagios,nagios) %{_localstatedir}/nagios/
+%attr(0755,nagios,nagios) %dir %{nagios4}
+%attr(0644,nagios,nagios) %config(noreplace) %{nagios4}/etc/*.cfg
+%attr(0755,nagios,nagios) %{nagios4}/etc/objects/
 %attr(0755,nagios,nagios) %{logdir}/
-%attr(0755,nagios,apache) %{_localstatedir}/nagios/rw/
-%attr(0644,root,root) %{_libdir}/libnagios.a
 
 %files devel
 %attr(0755,root,root) %{_includedir}/nagios/
@@ -232,9 +209,14 @@ fi
 %files contrib -f contrib.files
 %doc contrib/README.contrib
 %attr(0755,root,root) %{_bindir}/convertcfg
-%attr(0755,root,root) %{_libdir}/nagios/plugins/eventhandlers/
+%attr(0755,root,root) %{nagios4}/libexec/eventhandlers/
 
 %changelog
+* Wed Sep 16 2015 Tom Lyons <lyonst@vmware.com> nagios-4.1.1
+- Fixed paths to reflect Nagios 4 installation defaults.
+- The rpm macros scatter Nagios files around.
+- Leave them mostly under /usr/local/nagios/ instead.
+
 * Fri Nov 15 2013 Eric Stanley  <estanley@nagios.com> 4.0.1-1
 - Corrected permissions on plugins directory (bug #494 - patch by Karsten Weiss)
 - Corrected doc directive (bug #494 - patch by Karsten Weiss)
